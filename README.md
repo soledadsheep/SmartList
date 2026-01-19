@@ -15,6 +15,32 @@ Smart List was based on ideas of [tom-select.js](https://github.com/orchidjs/tom
 - **Extensible**<br> [Plugin API] for developing custom features.<br> [Theme API] for developing custom css.
 - **Accessible**, **Touch Support**, **Clean API**, ...
 
+## Frame HTML
+```html
+<select multiple hiden>
+    <option value="{id_1}">{name_1}</option>
+    <option value="{id_2}">{name_2}</option>
+</select>
+<div class="sl-container">
+    <div class="sl-head">
+        <div class="sl-tags">
+            <div class="sl-tag"></div>
+            <div class="sl-tag"></div>
+        </div>
+		<div class="sl-control">
+			<input class="sl-searchInput" type="input"/>
+			<div class="sl-clear"></div>
+		</div>
+    </div>
+    <div class="sl-list">
+        <div class="sl-items">
+            <div class="sl-item"></div>
+            <div class="sl-item"></div>
+        </div>
+    </div>
+</div>
+```
+
 ## Usage
 
 ```html
