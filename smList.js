@@ -1,4 +1,4 @@
-﻿// SmartList v1.1 – Universal Data Renderer
+﻿// SmartList v1.2 – Universal Data Renderer
 // Author: ducmanhchy@gmail.com
 
 ; (function (g, f) {
@@ -11,12 +11,7 @@
     'use strict';
 
     const constant = {
-        attr_startWith: "data-sl-",
-        mode: {
-            paging: "paging",
-            infinity: "infinity",
-            auto: "auto"
-        }
+        attr_startWith: "data-sl-"
     }
 
     class SmartList {
@@ -36,7 +31,6 @@
             this.root = root;
 
             this.settings = {
-                mode: constant.mode.auto,
                 source: null,
                 scope: document,
                 multiple: root.hasAttribute('multiple'),
@@ -45,8 +39,8 @@
                 placeholder: 'Tìm kiếm...',
                 maxHeight: '300px',
                 hasRemoveTag: true,
-                idField: 'id',      // id from datasource
-                labelField: 'name', // label from datasource
+                idField: 'id',          // id from datasource
+                labelField: 'label',    // label from datasource
                 class: {
                     _container: 'sl-ctn',
                     _head: 'sl-head',
@@ -66,7 +60,7 @@
                 },
                 templates: {
                     container: (data) => `<div class="${[data.class._container, data.class.container].filter(v => !!v).join(' ')}"></div>`,
-                    head: (data) => `<div class="${[data.class._head, data.class.head].filter(v => !!v).join(' ') }"></div>`,
+                    head: (data) => `<div class="${[data.class._head, data.class.head].filter(v => !!v).join(' ')}"></div>`,
                     tags: (data) => `<div class="${[data.class._tags, data.class.tags].filter(v => !!v).join(' ')}"></div>`,
                     tag: (data) => `
                         <div class="${[data.class._tag, data.class.tag].filter(v => !!v).join(' ')}" data-id="${data.item.id}">
@@ -88,8 +82,8 @@
                 items: new Map(),       // Map <id, item> – tất cả data đã load
                 selected: new Map(),    // Map <id, item> – items đang được chọn
                 isOpen: false,          // State of dropdown
-                debugger: true,
                 isLoading: false,       // Trạng thái đang load
+                debugger: true,
             }
             this._events = {};          // store event callback
             this._domListeners = [];    // store DOM event listeners for cleanup
@@ -104,7 +98,7 @@
 
             // Bind events
             this.focus_node = this.searchInput;
-            this._bindEvents();
+            this._bindEvents(); //  trigger event init on this for sure DOM is ready
 
             // init dropdown đóng/mở
             if (this.state.isOpen) this.openDropdown();
@@ -140,7 +134,7 @@
                 const itemsArray = Array.isArray(sc)
                     ? sc.map(entry => {
                         const item = typeof entry === 'object' && entry !== null && entry[s.idField] !== undefined
-                            ? { id: entry[s.idField], label: entry[s.labelField] || entry[s.idField], ...entry }
+                            ? { id: String(entry[s.idField]), label: entry[s.labelField] || entry[s.idField], ...entry }
                             : { id: String(entry), label: String(entry) };
                         return item;
                     })
@@ -162,7 +156,7 @@
         _applySimpleFilter(items, query) {
             const t = this;
             if (!items || items.length === 0) return;
-            
+
             const lowerQuery = query.toLowerCase();
             const filtered = items.filter(item => {
                 return item.label.toLowerCase().includes(lowerQuery);
@@ -201,8 +195,8 @@
 
                 // attr selected
                 const selectedIds = parseDataString(root.dataset.selected).map(v => typeof v === 'object' && v[st.idField] !== undefined ? v[st.idField] : String(v));
-                if (!st.multiple && selectedIds.length) sl.set(selectedIds[0], { id: selectedIds[0], label: selectedIds[0] });
-                else selectedIds.forEach(id => sl.set(id, { id, label: id }));
+                if (!st.multiple && selectedIds.length > 1) sl.set(String(selectedIds[0]), { id: selectedIds[0], label: selectedIds[0] });
+                else selectedIds.forEach(id => sl.set(String(id), { id, label: id }));
 
                 const _loadDataFromVal = (str) => {
                     if (!str) return;
@@ -213,23 +207,19 @@
                             ? { id: entry[st.idField], label: entry[st.labelField] || entry[st.idField], ...entry }
                             : { id: String(entry), label: String(entry) };
 
-                        s.staticItems.set(item.id, item);
-                        if (sl.has(item.id)) sl.set(item.id, item);
+                        s.staticItems.set(String(item.id), item);
+                        if (sl.has(String(item.id))) sl.set(String(item.id), item);
                     });
                 }
 
                 const _loadDataFromSelect = (select) => {
                     select.querySelectorAll('option').forEach(opt => {
                         if (opt.disabled) return;
-
                         const id = opt.value;
                         const item = { id: id, label: opt.textContent.trim() || id };
-
-                        // Lưu vào items
-                        s.staticItems.set(id, item);
-
-                        // Nếu được chọn → thêm vào selected
-                        if (((opt.hasAttribute('selected') || opt.selected) && !sl.length) || sl.has(item.id)) sl.set(id, item);
+                        s.staticItems.set(String(id), item);
+                        // !dataset.selected + opt select → add selected
+                        if ((opt.hasAttribute('selected') && !sl.length) || sl.has(String(item.id))) sl.set(String(id), item);
                     });
                 }
 
@@ -333,10 +323,10 @@
                             <div class="sl-tag"></div>
                             <div class="sl-tag"></div>
                         </div>
-		                <div class="sl-control">
-			                <input class="sl-searchInput" type="input"/>
-			                <div class="sl-clear"></div>
-		                </div>
+                        <div class="sl-control">
+                            <input class="sl-searchInput" type="input"/>
+                            <div class="sl-clear"></div>
+                        </div>
                     </div>
                     <div class="sl-list">
                         <div class="sl-items">
@@ -398,13 +388,16 @@
             }
 
             /**
-            event level:
+            thứ tự xử lý event trong js:
             in: mousedown → focus (input) → mouseup → click
             out: mousedown → blur (input) → focus (element khác) → mouseup → click
              */
             // click outside container or list (list not inside container)
-            t._onDOM(document, 'mousedown', (e) => {
-                if (!t.container.contains(e.target) && !t.list.contains(e.target)) t.closeDropdown();
+            t._onDOM(document, 'click', (e) => {
+                if (
+                    !t.container.contains(e.target) &&
+                    !t.list.contains(e.target)
+                ) t.closeDropdown();
             });
 
             if (d.multiple) {
@@ -416,7 +409,10 @@
                     const tag = e.target.closest(`.${cls._tag}`);
                     if (!tag?.dataset.id) return;
                     // remove tag
-                    if (rm) t.toggleItem(s.items.get(tag.dataset.id));
+                    if (rm) {
+                        t.toggleItem(s.selected.get(tag.dataset.id));
+                        e.stopPropagation(); // sau khi xóa tag thì chặn bubble "click outside" - xóa tag mà không close ddl
+                    }
                     else tag.classList.toggle('selected');
                 });
             }
@@ -471,19 +467,19 @@
                 option.selected = true;
                 t.root.appendChild(option);
             }
-            t.root.dispatchEvent(new Event('change', { bubbles: true }));
+            //t.root.dispatchEvent(new Event('change', { bubbles: true }));
         }
 
         toggleItem(item, resetUI = true) {
             const t = this;
             const itemEl = t.items.querySelector(`[data-id="${item.id}"]`);
             if (!t.settings.multiple) t.items.querySelectorAll('.selected').forEach(el => el.classList.remove('selected'));
-            if (t.state.selected.has(item.id)) {
-                itemEl.classList.remove('selected');
+            if (t.state.selected.has(String(item.id))) {
+                itemEl?.classList.remove('selected');
                 t.removeItem(item.id);
             }
             else {
-                itemEl.classList.add('selected');
+                itemEl?.classList.add('selected');
                 t.addItem(item);
             }
             if (resetUI) {
@@ -499,17 +495,17 @@
             if (!d.multiple) s.clear();
             if (max > 0 && s.size >= max) return false;
 
-            s.set(item.id, item);
+            s.set(String(item.id), item);
             t.trigger('item_add', item.id, item);
         }
 
         // remove item selected
         removeItem(id) {
             const s = this.state.selected;
-            const item = s.get(id);
+            const item = s.get(String(id));
             if (!item) return false;
 
-            s.delete(id);
+            s.delete(String(id));
             this.trigger('item_remove', id, item);
         }
 
@@ -552,7 +548,7 @@
                 const itemEl = t.getDom(html.trim());
                 if (itemEl) {
                     itemEl.dataset.id = item.id;
-                    if (t.state.selected.has(item.id)) itemEl.classList.add('selected');
+                    if (t.state.selected.has(String(item.id))) itemEl.classList.add('selected');
                     fragment.appendChild(itemEl);
                 }
             });
@@ -600,7 +596,7 @@
 
         destroy() {
             const t = this;
-            
+
             // Ngăn destroy nhiều lần
             if (t._destroyed) return;
             t._destroyed = true;

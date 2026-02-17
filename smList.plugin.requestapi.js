@@ -2,70 +2,139 @@
     if (!root.SmartList) return;
 
     root.SmartList.plugin('requestApi', function (options = {}) {
-        const t = this;
+        const t = this, s = t.settings, st = t.state, sc = s.source;
         const opts = Object.assign({
-            pageSize: 20,
+            mode: 'infinity', // 'paging' hoặc 'infinity'
+            pageSize: 5,
+            filters: [],
+            sorters: [],
+            filterControls: [], // { selector: string, field: string, operator: string, type?: string, quicksearch?: boolean }
+            sorterControls: [],  // { selector: string, field: string, type?: string }
+            parentPaging: null, // selector hoặc element chứa pagination (chỉ dùng khi mode = 'paging')
+            templates: {
+                pagination: {
+                    wrapper: '<ul class="pagination"></ul>',
+                    page: '<li class="page-item"><a href="#" class="page-link" data-page="{page}">{page}</a></li>',
+                }
+            }
         }, options);
 
-        if (opts.filterControls && opts.filterControls.length > 0) t.filterControls.push(...opts.filterControls);
-        if (opts.sorterControls && opts.sorterControls.length > 0) t.sorterControls.push(...opts.sorterControls);
-        if (opts.filters && opts.filters.length > 0) t.filters.push(...opts.filters);
-        if (opts.sorters && opts.sorters.length > 0) t.sorters.push(...opts.sorters);
+        // Bổ sung cache
+        t.cache = {
+            enabled: true,
+            ttl: 1000 * 60 * 5, // 5 phút
+            _store: new Map()
+        };
 
-        // Override hàm load của instance
-        t.on('load', async function (page = 1, append = false) {
-            const s = t.settings, st = t.state, sc = s.source;
+        // Method cache
+        t._getCachedData = function (key) {
+            if (!t.cache.enabled || !t.cache._store.has(key)) return null;
 
-            if (st.isLoading) return;
+            const entry = t.cache._store.get(key);
+            const now = Date.now();
+
+            // Sliding expiration
+            if (now - entry.timestamp <= t.cache.ttl) {
+                entry.timestamp = now;
+                t.cache._store.set(key, entry);
+                return entry.data;
+            } else {
+                t.cache._store.delete(key);
+                return null;
+            }
+        };
+
+        t._setCache = function (key, data) {
+            if (!t.cache.enabled) return;
+            t.cache._store.set(key, {
+                data,
+                timestamp: Date.now()
+            });
+        };
+
+        t._generateCacheKey = function () {
+            const params = t._buildRequestParams();
+            return JSON.stringify({
+                url: typeof sc === 'string' ? sc : 'fn',
+                page: st.currentPage,
+                filters: params.filters,
+                sorters: params.sorters
+            });
+        };
+
+        t.clearCache = function () {
+            t.cache._store.clear();
+        };
+
+        // Override hàm load của instance (bổ sung cache + loadmore)
+        t.load = async (page = 1, append = false) => {
+            st.currentPage = page;
+            if (st.isLoading || (!(st.hasMore ?? true) && append)) return;
             st.isLoading = true;
+            let itemArray = [];
 
-            let reqBody = t._buildRequestParams(page);
-            let data;
-            try {
-                if (typeof sc === 'function') data = await sc.call(t, reqBody);
-                else {
-                    const res = await fetch(sc, {
-                        method: 'POST',
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(reqBody)
-                    });
-                    if (!res.ok) throw new Error(`SmartList: Fetch error - ${res.status}`);
-                    data = await res.json();
+            // check cache trước
+            const cacheKey = t._generateCacheKey();
+            const cachedData = t._getCachedData(cacheKey);
+            if (cachedData) {
+                itemArray = cachedData.itemArray;
+                st.total = cachedData.total;
+            }
+            else {
+                let reqBody = t._buildRequestParams();
+                let data;
+                try {
+                    if (typeof sc === 'function') data = await sc.call(t, reqBody);
+                    else {
+                        const res = await fetch(sc, {
+                            method: 'POST',
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(reqBody)
+                        });
+                        if (!res.ok) throw new Error(`SmartList: Fetch error - ${res.status}`);
+                        data = await res.json();
+                    }
+
+                    itemArray = Array.isArray(data) ? data : data.items || data.data || data.results || [];
+                    st.total = data.totalRecord || data.total || itemArray.length;
+
+                    // set cache
+                    t._setCache(cacheKey, { itemArray, total: st.total });
                 }
-            } catch (err) {
-                st.isLoading = false;
-                if (s.debugger) console.error(err);
-                t.trigger('load_error', err);
-                return;
+                catch (err) {
+                    st.isLoading = false;
+                    if (s.debugger) console.error(err);
+                    t.trigger('load_error', err);
+                    return;
+                }
             }
 
-            let itemArray = Array.isArray(data) ? data : data.items || data.data || data.results || [];
-            let total = data.totalRecord || data.total || itemArray.length;
+            st.hasMore = page * opts.pageSize < st.total;
 
-            st.hasMore = page * reqBody.pagination.limit < total;
-            append = s.mode === constant.mode.infinity;
+            // mode infinity/paging
+            append = opts.mode === 'infinity';
+            if (opts.mode === 'paging') st.items.clear();
 
             itemArray.forEach(entry => {
                 const item = typeof entry === 'object' && entry !== null && entry.id !== undefined
-                    ? { id: entry.id, label: entry.label || entry.name || entry.id, ...entry }
+                    ? { id: String(entry.id), label: entry.label || entry.name || entry.id, ...entry }
                     : { id: String(entry), label: String(entry) };
-                st.items.set(item.id, item);
+                st.items.set(String(item.id), item);
             });
 
             st.selected.forEach((sel, id) => {
-                if (st.items.has(id)) st.selected.set(id, st.items.get(id));
+                if (st.items.has(String(id))) st.selected.set(String(id), st.items.get(String(id)));
             });
 
             st.isLoading = false;
             t.renderItems(append);  // append = true nếu load more
             if (page === 1 && st.multiple) t.renderTags();
-            t.trigger('load_end', { data: itemArray, total });
-        });
+            t.trigger('load_end', { data: itemArray, total: st.total });
+        };
 
-        // Hàm build params (dùng this.filterControls...)
-        t._buildRequestParams = function (page) {
-            const t = this, s = t.settings;
-            const filters = [...t.filters], sorters = [...t.sorters];
+        // Hàm build params
+        t._buildRequestParams = function () {
+            const filters = [...opts.filters], sorters = [...opts.sorters];
 
             const _detectType = (el) => {
                 if (!el) return "unknown";
@@ -81,7 +150,7 @@
             };
 
             // Filters (push thêm từ filterControls)
-            for (const cfg of t.filterControls) {
+            for (const cfg of opts.filterControls) {
                 let value = null;
                 if (cfg.quicksearch === true) {
                     if (t.searchInput && t.searchInput.value?.trim()) value = t.searchInput.value?.trim();
@@ -100,7 +169,7 @@
             }
 
             // Sorters (push thêm từ sorterControls)
-            for (const cfg of t.sorterControls) {
+            for (const cfg of opts.sorterControls) {
                 const el = s.scope.querySelector(cfg.selector);
                 if (!el) continue;
                 let value = null;
@@ -113,11 +182,46 @@
             }
 
             return {
-                pagination: { page: page, limit: opts.pageSize },
+                pagination: { page: st.currentPage, limit: opts.pageSize },
                 sorters: sorters,
                 filters: filters
             };
         };
+
+        t.on('init', () => {
+            // Bổ sung: event scroll cho infinity mode (nếu mode === 'infinity')
+            if (opts.mode === 'infinity') {
+                t._onDOM(t.list, 'scroll', (e) => {
+                    if (st.isLoading || !st.hasMore) return;
+                    if (t.container.scrollTop + t.container.clientHeight >= t.container.scrollHeight - 50) t.load(st.currentPage + 1, true);
+                }, { passive: true });
+            }
+            // Bổ sung: render pagination cho paging mode
+            else if (opts.mode === 'paging') {
+                t._renderPagination = () => {
+                    if (!t._paginationEl) {
+                        const p = opts.templates.pagination;
+                        const totalPages = Math.ceil(st.total / opts.pageSize);
+                        t._paginationEl = t.getDom(p.wrapper);
+                        for (let i = 1; i <= totalPages; i++) {
+                            t._paginationEl.appendChild(t.getDom(p.page.replace(/{page}/g, i)));
+                        }
+                        t.getDom(opts.parentPaging || t.list).appendChild(t._paginationEl);
+
+                        // Event click page
+                        t._onDOM(t._paginationEl, 'mousedown', (e) => {
+                            e.preventDefault(); // chặn bubble blur input search (vì open đang là true)
+                            const el = e.target.closest('.page-link');
+                            const newPage = parseInt(el.dataset.page);
+                            t.load(newPage, false); // load page mới, không append
+                            el.closest('ul').querySelectorAll('li').forEach(li => li.classList.remove('active'));
+                            el.parentNode.classList.add('active');
+                        });
+                    }
+                };
+                t.on('load_end', () => t._renderPagination());
+            }
+        });
     });
 
 })(typeof window !== 'undefined' ? window : this);
