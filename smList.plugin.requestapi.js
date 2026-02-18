@@ -1,4 +1,6 @@
-﻿; (function (root) {
+﻿// Plugin requestApi: hỗ trợ load dữ liệu từ API (fetch hoặc function trả về Promise)
+
+; (function (root) {
     if (!root.SmartList) return;
 
     root.SmartList.plugin('requestApi', function (options = {}) {
@@ -6,10 +8,10 @@
         const opts = Object.assign({
             mode: 'infinity', // 'paging' hoặc 'infinity'
             pageSize: 5,
-            filters: [],
-            sorters: [],
-            filterControls: [], // { selector: string, field: string, operator: string, type?: string, quicksearch?: boolean }
-            sorterControls: [],  // { selector: string, field: string, type?: string }
+            filters: [],    // filter ẩn, luôn áp dụng. ex: [{ "field": "Name", "value": zoneId }]
+            sorters: [],    // sorter ẩn, luôn áp dụng. ex: [{ "field": "Name", "direction": "asc" }]
+            filterControls: [{ field: s.labelField, operator: "contains", quicksearch: true }], // [{ selector: string, field: string, operator: string, type?: string, quicksearch?: boolean }]
+            sorterControls: [], // [{ selector: string, field: string, type?: string }]
             parentPaging: null, // selector hoặc element chứa pagination (chỉ dùng khi mode = 'paging')
             templates: {
                 pagination: {
@@ -52,8 +54,7 @@
             });
         };
 
-        t._generateCacheKey = function () {
-            const params = t._buildRequestParams();
+        t._generateCacheKey = function (params) {
             return JSON.stringify({
                 url: typeof sc === 'string' ? sc : 'fn',
                 page: st.currentPage,
@@ -72,24 +73,24 @@
             if (st.isLoading || (!(st.hasMore ?? true) && append)) return;
             st.isLoading = true;
             let itemArray = [];
+            let params = t._buildRequestParams();
 
             // check cache trước
-            const cacheKey = t._generateCacheKey();
+            const cacheKey = t._generateCacheKey(params);
             const cachedData = t._getCachedData(cacheKey);
             if (cachedData) {
                 itemArray = cachedData.itemArray;
                 st.total = cachedData.total;
             }
             else {
-                let reqBody = t._buildRequestParams();
                 let data;
                 try {
-                    if (typeof sc === 'function') data = await sc.call(t, reqBody);
+                    if (typeof sc === 'function') data = await sc.call(t, params);
                     else {
                         const res = await fetch(sc, {
                             method: 'POST',
                             headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify(reqBody)
+                            body: JSON.stringify(params)
                         });
                         if (!res.ok) throw new Error(`SmartList: Fetch error - ${res.status}`);
                         data = await res.json();
@@ -111,13 +112,12 @@
 
             st.hasMore = page * opts.pageSize < st.total;
 
-            // mode infinity/paging
-            append = opts.mode === 'infinity';
-            if (opts.mode === 'paging') st.items.clear();
+            // mode paging/infinity search
+            if (!append) st.items.clear();
 
             itemArray.forEach(entry => {
-                const item = typeof entry === 'object' && entry !== null && entry.id !== undefined
-                    ? { id: String(entry.id), label: entry.label || entry.name || entry.id, ...entry }
+                const item = typeof entry === 'object' && entry !== null && entry[s.idField] !== undefined
+                    ? { id: String(entry[s.idField]), label: entry[s.labelField] || entry[s.idField], ...entry }
                     : { id: String(entry), label: String(entry) };
                 st.items.set(String(item.id), item);
             });
@@ -155,7 +155,8 @@
                 if (cfg.quicksearch === true) {
                     if (t.searchInput && t.searchInput.value?.trim()) value = t.searchInput.value?.trim();
                     else continue;
-                } else {
+                }
+                else {
                     const el = s.scope.querySelector(cfg.selector);
                     if (!el) continue;
                     switch (cfg.type || _detectType(el)) {
@@ -188,12 +189,17 @@
             };
         };
 
+        t.onInput = (e) => {
+            t.load(1, false);
+            t.openDropdown();
+        }
+
         t.on('init', () => {
             // Bổ sung: event scroll cho infinity mode (nếu mode === 'infinity')
             if (opts.mode === 'infinity') {
                 t._onDOM(t.list, 'scroll', (e) => {
                     if (st.isLoading || !st.hasMore) return;
-                    if (t.container.scrollTop + t.container.clientHeight >= t.container.scrollHeight - 50) t.load(st.currentPage + 1, true);
+                    if (t.items.scrollTop + t.items.clientHeight >= t.items.scrollHeight - 50) t.load(st.currentPage + 1, true);
                 }, { passive: true });
             }
             // Bổ sung: render pagination cho paging mode
@@ -212,6 +218,7 @@
                         t._onDOM(t._paginationEl, 'mousedown', (e) => {
                             e.preventDefault(); // chặn bubble blur input search (vì open đang là true)
                             const el = e.target.closest('.page-link');
+                            if (!el) return;
                             const newPage = parseInt(el.dataset.page);
                             t.load(newPage, false); // load page mới, không append
                             el.closest('ul').querySelectorAll('li').forEach(li => li.classList.remove('active'));

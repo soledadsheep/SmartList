@@ -1,4 +1,4 @@
-﻿// SmartList v1.2 – Universal Data Renderer
+﻿// SmartList v1.3 – Universal Data Renderer
 // Author: ducmanhchy@gmail.com
 
 ; (function (g, f) {
@@ -9,10 +9,6 @@
             : g.SmartList = f()
 })(this, function () {
     'use strict';
-
-    const constant = {
-        attr_startWith: "data-sl-"
-    }
 
     class SmartList {
         constructor(element, user_config = {}) {
@@ -39,8 +35,11 @@
                 placeholder: 'Tìm kiếm...',
                 maxHeight: '300px',
                 hasRemoveTag: true,
-                idField: 'id',          // id from datasource
-                labelField: 'label',    // label from datasource
+                idField: 'id',          // id in datasource
+                labelField: 'label',    // label in datasource
+                constant: {
+                    attr_startWith: "data-sl-"
+                },
                 class: {
                     _container: 'sl-ctn',
                     _head: 'sl-head',
@@ -89,7 +88,6 @@
             this._domListeners = [];    // store DOM event listeners for cleanup
             this._allItems = [];        // all items for search (when source is array or data static)
 
-            // Merge config: settings -> constant.attr_startWith -> user_config
             this._mergeSettings(root, user_config);
             this._initFeatures();
             this._initCallbacks();
@@ -103,7 +101,7 @@
             // init dropdown đóng/mở
             if (this.state.isOpen) this.openDropdown();
             else {
-                this.state.isOpen = true;
+                this.state.isOpen = true; // để đảm bảo closeDropdown() chạy đúng logic
                 this.closeDropdown();
             }
             this.load();
@@ -127,11 +125,11 @@
             st.isLoading = true;
 
             // source là array
-            const isArraySource = Array.isArray(sc);
-            const isStaticSource = !sc && st.staticItems && st.staticItems.size > 0;
-            if (isArraySource || isStaticSource) {
+            const isArray = Array.isArray(sc);
+            const isStatic = !sc && st.staticItems && st.staticItems.size > 0;
+            if (isArray || isStatic) {
                 // Lấy tất cả items gốc
-                const itemsArray = Array.isArray(sc)
+                const items = Array.isArray(sc)
                     ? sc.map(entry => {
                         const item = typeof entry === 'object' && entry !== null && entry[s.idField] !== undefined
                             ? { id: String(entry[s.idField]), label: entry[s.labelField] || entry[s.idField], ...entry }
@@ -141,9 +139,9 @@
                     : Array.from(st.staticItems.values());
 
                 // Áp dụng filter đơn giản nếu có searchInput value
-                const query = t.searchInput?.value?.trim() || '';
-                if (query) t._applySimpleFilter(itemsArray, query);
-                else st.items = new Map(itemsArray.map(item => [item.id, item]));
+                const v = t.searchInput?.value?.trim() || '';
+                if (v) t._applyFilter(items, v);
+                else st.items = new Map(items.map(i => [String(i.id), i]));
             }
 
             t.trigger('load');
@@ -153,24 +151,23 @@
         }
 
         // Filter đơn giản (fallback khi không có plugin)
-        _applySimpleFilter(items, query) {
-            const t = this;
+        _applyFilter(items, query) {
             if (!items || items.length === 0) return;
 
-            const lowerQuery = query.toLowerCase();
-            const filtered = items.filter(item => {
-                return item.label.toLowerCase().includes(lowerQuery);
+            const q = query.toLowerCase();
+            const filtered = items.filter(i => {
+                return i.label.toLowerCase().includes(q);
             });
-            t.state.items = new Map(filtered.map(item => [item.id, item]));
+            this.state.items = new Map(filtered.map(item => [String(item.id), item]));
         }
 
         // merge config user_config -> data-attr -> default
         _mergeSettings(root, user_config) {
-            const t = this, s = t.state, sl = t.state.selected, st = t.settings, data_attr = {};
+            const t = this, s = t.state, sl = s.selected, st = t.settings, data_attr = {};
 
             for (const attr of root.attributes) {
-                if (attr.name.startsWith(constant.attr_startWith)) {
-                    const key = attr.name.replace(constant.attr_startWith, '').replace(/-([a-z])/g, g => g[1].toUpperCase());
+                if (attr.name.startsWith(st.constant.attr_startWith)) {
+                    const key = attr.name.replace(st.constant.attr_startWith, '').replace(/-([a-z])/g, g => g[1].toUpperCase());
                     try { data_attr[key] = JSON.parse(attr.value); }
                     catch { data_attr[key] = attr.value; }
                 }
@@ -185,8 +182,8 @@
                 const parseDataString = (str) => {
                     if (!str) return [];
                     try {
-                        const parsed = JSON.parse(str);
-                        return Array.isArray(parsed) ? parsed : [];
+                        const data = JSON.parse(str);
+                        return Array.isArray(data) ? data : [];
                     } catch (e) {
                         if (s.debugger) console.log('Data error. Wrong format json!');
                         return str.split(/[\n,;]+/).map(v => v.trim()).filter(v => v);
@@ -204,7 +201,7 @@
 
                     data.forEach(entry => {
                         const item = typeof entry === 'object' && entry !== null && entry[st.idField] !== undefined
-                            ? { id: entry[st.idField], label: entry[st.labelField] || entry[st.idField], ...entry }
+                            ? { id: String(entry[st.idField]), label: entry[st.labelField] || entry[st.idField], ...entry }
                             : { id: String(entry), label: String(entry) };
 
                         s.staticItems.set(String(item.id), item);
@@ -224,11 +221,11 @@
                 }
 
                 // attr items
-                const dataAttrItems = root.dataset.items || '';
+                const items = root.dataset.items || '';
                 let hasAttrItems = false;
-                if (dataAttrItems) {
+                if (items) {
                     hasAttrItems = true;
-                    _loadDataFromVal(dataAttrItems);
+                    _loadDataFromVal(items);
                 }
 
                 // option/value
@@ -249,11 +246,11 @@
             const enabled = {};
 
             if (Array.isArray(plugins)) {
-                plugins.forEach(item => {
+                plugins.forEach(p => {
                     // ['a', 'b', 'c']
-                    if (typeof item === 'string') enabled[item] = true;
+                    if (typeof p === 'string') enabled[p] = true;
                     // [{'name': 'a', options: {}}, {'name': 'b', options: {}}]
-                    else if (item && item.name) enabled[item.name] = item.options || true;
+                    else if (p && p.name) enabled[p.name] = p.options || true;
                 });
             }
             // {'a': { ... }, 'b': { ... }, 'c': { ... }}
@@ -263,13 +260,13 @@
             for (const name in enabled) {
                 if (enabled[name] === false) continue;
 
-                const constructor = SmartList.plugins[name];
-                if (!constructor) {
+                const fn = SmartList.plugins[name];
+                if (!fn) {
                     console.warn(`SmartList: Plugin "${name}" không tồn tại.`); continue;
                 }
 
                 // Gọi plugin – this chính là instance, options là config
-                constructor.call(this, enabled[name]);
+                fn.call(this, enabled[name]);
             }
         }
 
@@ -295,47 +292,46 @@
 
         _initTheme() {
             let s = this.settings;
-            let theme = s.theme || 'default';
-            let config = SmartList.themes[theme];
-            if (config && typeof config === 'object') s.class = Object.assign(s.class, config.classMap);
+            let t = SmartList.themes[s.theme || 'default'];
+            if (t && typeof t === 'object') s.class = Object.assign(s.class, t.classMap);
         }
 
         _initTemplate() {
-            let t = this, s = t.settings, cls = s.class, temps = s.templates;
+            let t = this, s = t.settings, cls = s.class, tmps = s.templates;
 
             // Render từng phần riêng biệt
-            t.container = t.getDom(t._renderTemplate(temps.container, cls));
-            t.head = t.getDom(t._renderTemplate(temps.head, cls));
-            t.tags = t.getDom(t._renderTemplate(temps.tags, cls));
-            t.control = t.getDom(t._renderTemplate(temps.control, cls));
-            t.searchInput = t.getDom(t._renderTemplate(temps.searchInput, cls));
-            t.list = t.getDom(t._renderTemplate(temps.list, cls));
-            t.items = t.getDom(t._renderTemplate(temps.items, cls));
+            t.container = t.getDom(t._renderTemplate(tmps.container, cls));
+            t.head = t.getDom(t._renderTemplate(tmps.head, cls));
+            t.tags = t.getDom(t._renderTemplate(tmps.tags, cls));
+            t.control = t.getDom(t._renderTemplate(tmps.control, cls));
+            t.searchInput = t.getDom(t._renderTemplate(tmps.searchInput, cls));
+            t.list = t.getDom(t._renderTemplate(tmps.list, cls));
+            t.items = t.getDom(t._renderTemplate(tmps.items, cls));
 
+            // Xây dựng cây DOM
+            /**
+            <div class="sl-container">
+                <div class="sl-head">
+                    <div class="sl-tags">
+                        <div class="sl-tag"></div>
+                        <div class="sl-tag"></div>
+                    </div>
+                    <div class="sl-control">
+                        <input class="sl-searchInput" type="input"/>
+                        <div class="sl-clear"></div>
+                    </div>
+                </div>
+                <div class="sl-list">
+                    <div class="sl-items">
+                        <div class="sl-item"></div>
+                        <div class="sl-item"></div>
+                    </div>
+                </div>
+            </div>
+             */
             const _setupDOMTemplate = () => {
                 const r = s.render;
 
-                // Xây dựng cây DOM
-                /**
-                <div class="sl-container">
-                    <div class="sl-head">
-                        <div class="sl-tags">
-                            <div class="sl-tag"></div>
-                            <div class="sl-tag"></div>
-                        </div>
-                        <div class="sl-control">
-                            <input class="sl-searchInput" type="input"/>
-                            <div class="sl-clear"></div>
-                        </div>
-                    </div>
-                    <div class="sl-list">
-                        <div class="sl-items">
-                            <div class="sl-item"></div>
-                            <div class="sl-item"></div>
-                        </div>
-                    </div>
-                </div>
-                 */
                 t.container.appendChild(t.head);
                 if (s.multiple) t.head.appendChild(t.tags);
                 t.head.appendChild(t.control);
@@ -389,8 +385,8 @@
 
             /**
             thứ tự xử lý event trong js:
-            in: mousedown → focus (input) → mouseup → click
-            out: mousedown → blur (input) → focus (element khác) → mouseup → click
+            in: mousedown → focus (el hiện tại) → mouseup → click
+            out: mousedown → blur (el cũ) → focus (el đích) → mouseup → click
              */
             // click outside container or list (list not inside container)
             t._onDOM(document, 'click', (e) => {
@@ -409,11 +405,9 @@
                     const tag = e.target.closest(`.${cls._tag}`);
                     if (!tag?.dataset.id) return;
                     // remove tag
-                    if (rm) {
-                        t.toggleItem(s.selected.get(tag.dataset.id));
-                        e.stopPropagation(); // sau khi xóa tag thì chặn bubble "click outside" - xóa tag mà không close ddl
-                    }
+                    if (rm) t.toggleItem(s.selected.get(tag.dataset.id));
                     else tag.classList.toggle('selected');
+                    e.preventDefault(); // sau khi click tag thì chặn bubble "click outside" - click tag mà không close ddl
                 });
             }
 
@@ -451,7 +445,7 @@
             }
             t.onClick = (e) => t.openDropdown();
             t.onFocus = (e) => t.openDropdown();
-            t.onBlur = (e) => t.closeDropdown();
+            t.onBlur = (e) => { }
 
             t.trigger('init');
         }
@@ -461,11 +455,11 @@
             if (t.root?.tagName !== 'SELECT') return;
             t.root.replaceChildren();
             for (const item of s.values()) {
-                let option = document.createElement('option');
-                option.value = item.id;
-                option.textContent = item.label;
-                option.selected = true;
-                t.root.appendChild(option);
+                let o = document.createElement('option');
+                o.value = item.id;
+                o.textContent = item.label;
+                o.selected = true;
+                t.root.appendChild(o);
             }
             //t.root.dispatchEvent(new Event('change', { bubbles: true }));
         }
@@ -577,7 +571,7 @@
         // render template context
         _renderTemplate(template, context = {}) {
             if (typeof template === 'function') return template.call(this, { ...this.settings, ...context });
-            return template || ''; // nếu là string
+            return template || '';
         }
 
         // return HTMLElement
@@ -595,7 +589,7 @@
         }
 
         destroy() {
-            const t = this;
+            const t = this, s = t.state, m = t._mutationObserver;
 
             // Ngăn destroy nhiều lần
             if (t._destroyed) return;
@@ -605,9 +599,9 @@
             t.trigger('destroy');
 
             // Ngắt kết nối MutationObserver
-            if (t._mutationObserver) {
-                t._mutationObserver.disconnect();
-                t._mutationObserver = null;
+            if (m) {
+                m.disconnect();
+                m = null;
             }
 
             // Xóa tất cả DOM event listeners
@@ -626,11 +620,11 @@
             t._allItems = [];
 
             // Xóa state
-            if (t.state) {
-                if (t.state.staticItems) t.state.staticItems.clear();
-                if (t.state.items) t.state.items.clear();
-                if (t.state.selected) t.state.selected.clear();
-                t.state = null;
+            if (s) {
+                if (s.staticItems) s.staticItems.clear();
+                if (s.items) s.items.clear();
+                if (s.selected) s.selected.clear();
+                s = null;
             }
 
             // Xóa references
@@ -645,54 +639,54 @@
             t.root = null;
         }
 
-        on(events, fct) {
-            this._forEvents(events, (event) => {
-                const fcts = this._events[event] || [];
-                fcts.push(fct);
-                this._events[event] = fcts;
+        on(events, fn) {
+            this._forEvents(events, (e) => {
+                const fns = this._events[e] || [];
+                fns.push(fn);
+                this._events[e] = fns;
             });
         }
 
-        off(events, fct) {
+        off(events, fn) {
             var n = arguments.length;
             if (n === 0) {
                 this._events = {};
                 return;
             }
-            this._forEvents(events, (event) => {
+            this._forEvents(events, (e) => {
                 if (n === 1) {
-                    delete this._events[event];
+                    delete this._events[e];
                     return;
                 }
-                const fcts = this._events[event];
-                if (fcts === undefined) return;
-                fcts.splice(fcts.indexOf(fct), 1);
-                this._events[event] = fcts;
+                const fns = this._events[e];
+                if (fns === undefined) return;
+                fns.splice(fns.indexOf(fn), 1);
+                this._events[e] = fns;
             });
         }
 
         trigger(events, ...args) {
-            this._forEvents(events, (event) => {
-                const fcts = this._events[event];
-                if (fcts === undefined) return;
-                fcts.forEach(fct => { fct.apply(this, args); });
+            this._forEvents(events, (e) => {
+                const fns = this._events[e];
+                if (fns === undefined) return;
+                fns.forEach(fn => { fn.apply(this, args); });
             });
         }
 
         _forEvents(events, callback) {
-            events.split(/\s+/).forEach((event) => { callback(event); });
+            events.split(/\s+/).forEach((e) => { callback(e); });
         }
 
         // add DOM EventListener
-        _onDOM(element, event, handler, options = false) {
-            element.addEventListener(event, handler, options);
-            this._domListeners.push({ element, event, handler, options });
+        _onDOM(el, e, handler, options = false) {
+            el.addEventListener(e, handler, options);
+            this._domListeners.push({ el, e, handler, options });
         }
 
         // del all DOM listeners
         _offAllDOM() {
-            this._domListeners.forEach(({ element, event, handler, options }) => {
-                if (element && handler) element.removeEventListener(event, handler, options);
+            this._domListeners.forEach(({ el, e, handler, options }) => {
+                if (el && handler) el.removeEventListener(e, handler, options);
             });
             this._domListeners = [];
         }
@@ -704,10 +698,10 @@
     };
 
     SmartList.plugins = {};
-    SmartList.plugin = function (name, constructor) {
+    SmartList.plugin = function (name, fn) {
         if (typeof name !== 'string' || name === '') throw new Error('SmartList: Plugin name must be a non-empty string');
-        if (typeof constructor !== 'function') throw new Error('SmartList: Plugin constructor must be a function');
-        SmartList.plugins[name] = constructor;
+        if (typeof fn !== 'function') throw new Error('SmartList: Plugin fn is not a function');
+        SmartList.plugins[name] = fn;
     };
 
     return SmartList;

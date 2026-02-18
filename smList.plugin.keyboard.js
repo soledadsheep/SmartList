@@ -2,9 +2,7 @@
     if (!root.SmartList) return;
 
     root.SmartList.plugin('keyboard', function (options = {}) {
-        const t = this;
-        const s = t.state;
-        const d = t.settings;
+        const t = this, s = t.state, d = t.settings;
 
         t.on('init', function () {
             t._onDOM(t.focus_node, 'keydown', (e) => t.onKeyDown(e));
@@ -48,19 +46,14 @@
 
                         // 1. tìm tag selected
                         let removed = false;
-                        for (let i = 0; i < tags.length; i++) {
-                            const tag = tags[i];
-                            if (tag.classList.contains('selected')) {
-                                t.toggleItem(s.items.get(tag.dataset.id), i == tags.length - 1);
-                                removed = true;
-                            }
+                        const selectedEls = Array.from(tags).filter(tag => tag.classList.contains('selected'));
+                        for (let i = 0; i < selectedEls.length; i++) {
+                            t.toggleItem(s.selected.get(selectedEls[i].dataset.id), i == selectedEls.length - 1);
+                            removed = true;
                         }
 
                         // 2. nếu không có tag nào selected → xóa tag cuối
-                        if (!removed) {
-                            const last = tags[tags.length - 1];
-                            t.toggleItem(s.items.get(last.dataset.id), true);
-                        }
+                        if (!removed) t.toggleItem([...s.selected.values()].pop(), true);
                     }
                     return;
                 }
