@@ -11,7 +11,7 @@
             tagRemove: 'btn-close btn-close-white btn-sm ms-1',
             control: 'flex-grow-1',
             searchInput: 'form-control border-0 shadow-none p-0',
-            list: 'dropdown-menu show w-100 p-0',
+            list: 'dropdown-menu show w-100 p-0 overflow-y-auto',
             items: 'list-group list-group-flush',
             item: 'list-group-item list-group-item-action',
         }

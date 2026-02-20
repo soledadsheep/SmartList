@@ -7,6 +7,7 @@
         const t = this, s = t.settings, st = t.state, sc = s.source;
         const opts = Object.assign({
             mode: 'infinity', // 'paging' hoặc 'infinity'
+            threshold: 3, // khoảng cách (số item) tính từ cuối danh sách để trigger load thêm (chỉ dùng khi mode = 'infinity')
             pageSize: 5,
             filters: [],    // filter ẩn, luôn áp dụng. ex: [{ "field": "Name", "value": zoneId }]
             sorters: [],    // sorter ẩn, luôn áp dụng. ex: [{ "field": "Name", "direction": "asc" }]
@@ -157,12 +158,12 @@
                     else continue;
                 }
                 else {
-                    const el = s.scope.querySelector(cfg.selector);
+                    const el = t.getDom(s.scope).querySelector(cfg.selector);
                     if (!el) continue;
                     switch (cfg.type || _detectType(el)) {
                         case "text": case "select": value = el.value?.trim(); break;
                         case "checkbox": value = el.checked; break;
-                        case "radio": value = s.scope.querySelector(`input[name="${el.name}"]:checked`)?.value; break;
+                        case "radio": value = t.getDom(s.scope).querySelector(`input[name="${el.name}"]:checked`)?.value; break;
                         case "button": value = el.classList.contains("active") ? el.dataset.value : ""; break;
                     }
                 }
@@ -171,12 +172,12 @@
 
             // Sorters (push thêm từ sorterControls)
             for (const cfg of opts.sorterControls) {
-                const el = s.scope.querySelector(cfg.selector);
+                const el = t.getDom(s.scope).querySelector(cfg.selector);
                 if (!el) continue;
                 let value = null;
                 switch (cfg.type || _detectType(el)) {
                     case "select": value = el.value?.trim(); break;
-                    case "radio": value = s.scope.querySelector(`input[name="${el.name}"]:checked`)?.value; break;
+                    case "radio": value = t.getDom(s.scope).querySelector(`input[name="${el.name}"]:checked`)?.value; break;
                     case "button": value = el.dataset.sort || "asc"; break;
                 }
                 if (value) sorters.push({ field: cfg.field, direction: value });
@@ -197,9 +198,14 @@
         t.on('init', () => {
             // Bổ sung: event scroll cho infinity mode (nếu mode === 'infinity')
             if (opts.mode === 'infinity') {
+                let itemHeight = 0; isSet = false;
                 t._onDOM(t.list, 'scroll', (e) => {
                     if (st.isLoading || !st.hasMore) return;
-                    if (t.items.scrollTop + t.items.clientHeight >= t.items.scrollHeight - 50) t.load(st.currentPage + 1, true);
+                    if (!isSet) {
+                        itemHeight = t.items.clientHeight / st.items.size;
+                        isSet = true;
+                    }
+                    if (t.list.scrollHeight - t.list.scrollTop - t.list.clientHeight <= itemHeight * opts.threshold) t.load(st.currentPage + 1, true);
                 }, { passive: true });
             }
             // Bổ sung: render pagination cho paging mode

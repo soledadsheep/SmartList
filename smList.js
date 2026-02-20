@@ -31,6 +31,7 @@
                 scope: document,
                 multiple: root.hasAttribute('multiple'),
                 closeDropdownOnSelect: false,
+                alwaysOpenDropdown: false,
                 maxItemSelectable: -1,
                 placeholder: 'Tìm kiếm...',
                 maxHeight: '300px',
@@ -38,7 +39,7 @@
                 idField: 'id',          // id in datasource
                 labelField: 'label',    // label in datasource
                 constant: {
-                    attr_startWith: "data-sl-"
+                    attr_startWith: "sl-"
                 },
                 class: {
                     _container: 'sl-ctn',
@@ -68,7 +69,7 @@
                         </div>`,
                     control: (data) => `<div class="${[data.class._control, data.class.control].filter(v => !!v).join(' ')}"></div>`,
                     searchInput: (data) => `<input class="${[data.class._searchInput, data.class.searchInput].filter(v => !!v).join(' ')}" type="text" placeholder="${data.placeholder}" />`,
-                    list: (data) => `<div class="${[data.class._list, data.class.list].filter(v => !!v).join(' ')}" style="max-height: ${data.maxHeight};">`,
+                    list: (data) => `<div class="${[data.class._list, data.class.list].filter(v => !!v).join(' ')}" style="max-height: ${data.maxHeight};"></div>`,
                     items: (data) => `<div class="${[data.class._items, data.class.items].filter(v => !!v).join(' ')}"></div>`,
                     item: (data) => `<div class="${[data.class._item, data.class.item].filter(v => !!v).join(' ')}" data-id="${data.item.id}">${data.item.label}</div>`,
                     noResults: (data) => `<div class="${[data.class._item, data.class.item].filter(v => !!v).join(' ')}">Không tìm thấy kết quả</div>`,
@@ -98,25 +99,25 @@
             this.focus_node = this.searchInput;
             this._bindEvents(); //  trigger event init on this for sure DOM is ready
 
-            // init dropdown đóng/mở
             if (this.state.isOpen) this.openDropdown();
             else {
                 this.state.isOpen = true; // để đảm bảo closeDropdown() chạy đúng logic
                 this.closeDropdown();
             }
+            if (this.settings.alwaysOpenDropdown) this.openDropdown();
             this.load();
             this.syncRoot();
 
             // Auto destroy khi không cần (document không chứa this.root - ex: redirect page)
-            this._mutationObserver = new MutationObserver((mutations) => {
-                for (const m of mutations) {
+            this._observer = new MutationObserver((observers) => {
+                for (const o of observers) {
                     if (!document.contains(this.root)) {
                         this.destroy();
                         break;
                     }
                 }
             });
-            this._mutationObserver.observe(document.body, { childList: true, subtree: true });
+            this._observer.observe(document.body, { childList: true, subtree: true });
         }
 
         async load() {
@@ -238,7 +239,29 @@
             root.removeAttribute('data-items');
             root.removeAttribute('data-selected');
 
-            t.settings = Object.assign({}, st, data_attr, user_config);
+            const _isObject = (val) => Object.prototype.toString.call(val) === "[object Object]";
+            const _deepMerge = (target, ...sources) => {
+                if (!sources.length) return target;
+
+                const source = sources.shift();
+                if (!_isObject(source)) return _deepMerge(target, ...sources);
+                if (!_isObject(target)) target = {};
+
+                for (const k of Object.keys(source)) {
+                    const sourceVal = source[k];
+                    const targetVal = target[k];
+
+                    // Array → override
+                    if (Array.isArray(sourceVal)) target[k] = [...sourceVal];
+                    // Object → recursive merge
+                    else if (_isObject(sourceVal)) target[k] = _deepMerge(_isObject(targetVal) ? targetVal : {}, sourceVal);
+                    // Primitive → override
+                    else target[k] = sourceVal;
+                }
+
+                return _deepMerge(target, ...sources);
+            };
+            t.settings = _deepMerge({}, st, data_attr, user_config);
         }
 
         _initFeatures() {
@@ -561,7 +584,7 @@
 
         closeDropdown() {
             const t = this;
-            if (!t.state.isOpen) return;
+            if (!t.state.isOpen || t.settings.alwaysOpenDropdown) return;
             t.state.isOpen = false;
             t.list.style.display = 'none';
             t._resetHoverItem();
@@ -589,7 +612,7 @@
         }
 
         destroy() {
-            const t = this, s = t.state, m = t._mutationObserver;
+            const t = this, s = t.state, m = t._observer;
 
             // Ngăn destroy nhiều lần
             if (t._destroyed) return;
@@ -693,12 +716,12 @@
     }
 
     SmartList.themes = {};
-    SmartList.theme = function (name, config) {
+    SmartList.theme = (name, config) => {
         SmartList.themes[name] = config;
     };
 
     SmartList.plugins = {};
-    SmartList.plugin = function (name, fn) {
+    SmartList.plugin = (name, fn) => {
         if (typeof name !== 'string' || name === '') throw new Error('SmartList: Plugin name must be a non-empty string');
         if (typeof fn !== 'function') throw new Error('SmartList: Plugin fn is not a function');
         SmartList.plugins[name] = fn;
