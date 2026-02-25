@@ -1,4 +1,4 @@
-﻿// SmartList v1.3 – Universal Data Renderer
+﻿// SmartList v1.4 – Universal Data Renderer
 // Author: ducmanhchy@gmail.com
 
 ; (function (g, f) {
@@ -11,11 +11,11 @@
     'use strict';
 
     class SmartList {
-        constructor(element, user_config = {}) {
+        constructor(element, config = {}) {
             // get root element (support string selector or HTMLElement)
             if (typeof element === 'string') {
                 const nodes = document.querySelectorAll(element);
-                if (nodes.length > 1) return [...nodes].map(el => new SmartList(el, user_config));
+                if (nodes.length > 1) return [...nodes].map(el => new SmartList(el, config));
                 element = nodes[0];
             }
             const root = this.getDom(element);
@@ -55,6 +55,7 @@
                     _item: 'sl-item',
                 },
                 render: {
+                    parentTags: '',         // tags sẽ đặt trong thẻ này
                     parentSearchInput: '',  // searchInput sẽ đặt trong thẻ này
                     parentDropdown: ''      // list sẽ đặt trong thẻ này
                 },
@@ -89,7 +90,7 @@
             this._domListeners = [];    // store DOM event listeners for cleanup
             this._allItems = [];        // all items for search (when source is array or data static)
 
-            this._mergeSettings(root, user_config);
+            this._mergeSettings(root, config);
             this._initFeatures();
             this._initCallbacks();
             this._initTheme();
@@ -99,12 +100,11 @@
             this.focus_node = this.searchInput;
             this._bindEvents(); //  trigger event init on this for sure DOM is ready
 
-            if (this.state.isOpen) this.openDropdown();
+            if (this.state.isOpen || this.settings.alwaysOpenDropdown) this.openDropdown();
             else {
                 this.state.isOpen = true; // để đảm bảo closeDropdown() chạy đúng logic
                 this.closeDropdown();
             }
-            if (this.settings.alwaysOpenDropdown) this.openDropdown();
             this.load();
             this.syncRoot();
 
@@ -151,32 +151,34 @@
             st.isLoading = false;
         }
 
-        // Filter đơn giản (fallback khi không có plugin)
+        // filter đơn giản (fallback khi không có plugin)
         _applyFilter(items, query) {
-            if (!items || items.length === 0) return;
+            if (!items || !items.any()) return;
 
             const q = query.toLowerCase();
-            const filtered = items.filter(i => {
+            const r = items.filter(i => {
                 return i.label.toLowerCase().includes(q);
             });
-            this.state.items = new Map(filtered.map(item => [String(item.id), item]));
+            this.state.items = new Map(r.map(i => [String(i.id), i]));
         }
 
-        // merge config user_config -> data-attr -> default
-        _mergeSettings(root, user_config) {
-            const t = this, s = t.state, sl = s.selected, st = t.settings, data_attr = {};
+        // merge config config -> data-attr -> default
+        _mergeSettings(root, config) {
+            const t = this, s = t.state, sl = s.selected, st = t.settings, attr = {};
 
-            for (const attr of root.attributes) {
-                if (attr.name.startsWith(st.constant.attr_startWith)) {
-                    const key = attr.name.replace(st.constant.attr_startWith, '').replace(/-([a-z])/g, g => g[1].toUpperCase());
-                    try { data_attr[key] = JSON.parse(attr.value); }
-                    catch { data_attr[key] = attr.value; }
+            for (const a of root.attributes) {
+                if (a.name.startsWith(st.constant.a_startWith)) {
+                    const key = a.name.replace(st.constant.attr_startWith, '').replace(/-([a-z])/g, g => g[1].toUpperCase());
+                    try { attr[key] = JSON.parse(a.value); }
+                    catch { attr[key] = a.value; }
                 }
+                if (a.name === 'placeholder') attr.placeholder = a.value;
+                if (a.name === 'tabIndex') attr.tabIndex = a.value || 0;
+                if (a.name === 'required') attr.required = true;
+                if (a.name === 'rtl') attr.rtl = /rtl/i.test(getComputedStyle(root).direction);
             }
+            if (config.multiple) st.multiple = config.multiple;
             if (!st.multiple) st.maxItemSelectable = 1;
-            t.rtl = /rtl/i.test(getComputedStyle(root).direction);
-            t.isRequired = root.required;
-            t.tabIndex = root.tabIndex || 0;
 
             const _loadDataFromRoot = () => {
                 const tagName = root.tagName.toLowerCase();
@@ -243,25 +245,25 @@
             const _deepMerge = (target, ...sources) => {
                 if (!sources.length) return target;
 
-                const source = sources.shift();
-                if (!_isObject(source)) return _deepMerge(target, ...sources);
+                const src = sources.shift();
+                if (!_isObject(src)) return _deepMerge(target, ...sources);
                 if (!_isObject(target)) target = {};
 
-                for (const k of Object.keys(source)) {
-                    const sourceVal = source[k];
-                    const targetVal = target[k];
+                for (const k of Object.keys(src)) {
+                    const srcVal = src[k];
+                    const tarVal = target[k];
 
                     // Array → override
-                    if (Array.isArray(sourceVal)) target[k] = [...sourceVal];
+                    if (Array.isArray(srcVal)) target[k] = [...srcVal];
                     // Object → recursive merge
-                    else if (_isObject(sourceVal)) target[k] = _deepMerge(_isObject(targetVal) ? targetVal : {}, sourceVal);
+                    else if (_isObject(srcVal)) target[k] = _deepMerge(_isObject(tarVal) ? tarVal : {}, srcVal);
                     // Primitive → override
-                    else target[k] = sourceVal;
+                    else target[k] = srcVal;
                 }
 
                 return _deepMerge(target, ...sources);
             };
-            t.settings = _deepMerge({}, st, data_attr, user_config);
+            t.settings = _deepMerge({}, st, attr, config);
         }
 
         _initFeatures() {
@@ -356,7 +358,7 @@
                 const r = s.render;
 
                 t.container.appendChild(t.head);
-                if (s.multiple) t.head.appendChild(t.tags);
+                if (s.multiple) t.getDom(r.parentTags || t.head).appendChild(t.tags);
                 t.head.appendChild(t.control);
                 t.getDom(r.parentSearchInput || t.control).appendChild(t.searchInput);
                 t.getDom(r.parentDropdown || t.container).appendChild(t.list);
@@ -396,9 +398,6 @@
                 item.classList.add('hover');
                 s.hoverIndex = index;
                 s.hoverItem = item;
-
-                // auto scroll into view
-                item.scrollIntoView({ block: 'nearest' });
             }
             t._resetHoverItem = () => {
                 s.hoverItem?.classList.remove('hover');
@@ -407,16 +406,11 @@
             }
 
             /**
-            thứ tự xử lý event trong js:
-            in: mousedown → focus (el hiện tại) → mouseup → click
-            out: mousedown → blur (el cũ) → focus (el đích) → mouseup → click
+                mousedown → blur (el cũ) → focus (el mới) → mouseup → click
              */
             // click outside container or list (list not inside container)
             t._onDOM(document, 'click', (e) => {
-                if (
-                    !t.container.contains(e.target) &&
-                    !t.list.contains(e.target)
-                ) t.closeDropdown();
+                if (!t.container.contains(e.target) && !t.list.contains(e.target)) t.closeDropdown();
             });
 
             if (d.multiple) {
@@ -445,7 +439,7 @@
                 if (idx !== t.state.hoverIndex) t._setHoverItem(idx);
             });
             // click item
-            t._onDOM(t.items, 'mousedown', (e) => {
+            t._onDOM(t.items, 'click', (e) => {
                 const itemEl = e.target.closest(`.${cls._item}`);
                 if (!itemEl?.dataset.id) return;
 
@@ -453,8 +447,7 @@
                 if (!item) return;
 
                 t.toggleItem(item);
-                // chặn active onBlur()
-                if (!d.closeDropdownOnSelect) e.preventDefault();
+                if (d.closeDropdownOnSelect) t.closeDropdown();
             });
 
             t._onDOM(t.searchInput, 'input', (e) => t.onInput(e));
@@ -541,7 +534,6 @@
             // multiple select
             t.tags.replaceChildren();
             let fragment = document.createDocumentFragment();
-
             s.forEach(item => {
                 const tagEl = t.getDom(t._renderTemplate(d.templates.tag, { item }).trim());
                 if (tagEl) {
@@ -550,7 +542,7 @@
                 }
             });
             t.tags.appendChild(fragment);
-            t.trigger('render_tags');
+            t.trigger('render_tags', t);
         }
 
         renderItems(append = false) {
@@ -612,7 +604,7 @@
         }
 
         destroy() {
-            const t = this, s = t.state, m = t._observer;
+            const t = this;  let s = t.state, m = t._observer;
 
             // Ngăn destroy nhiều lần
             if (t._destroyed) return;
