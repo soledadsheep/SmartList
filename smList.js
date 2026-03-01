@@ -1,4 +1,4 @@
-﻿// SmartList v1.4 – Universal Data Renderer
+﻿// SmartList v1.5 – Universal Data Renderer
 // Author: ducmanhchy@gmail.com
 
 ; (function (g, f) {
@@ -30,6 +30,7 @@
                 source: null,
                 scope: document,
                 multiple: root.hasAttribute('multiple'),
+                closeable: true,
                 closeDropdownOnSelect: false,
                 alwaysOpenDropdown: false,
                 maxItemSelectable: -1,
@@ -39,7 +40,7 @@
                 idField: 'id',          // id in datasource
                 labelField: 'label',    // label in datasource
                 constant: {
-                    attr_startWith: "sl-"
+                    attr_startWith: "sl"
                 },
                 class: {
                     _container: 'sl-ctn',
@@ -60,20 +61,20 @@
                     parentDropdown: ''      // list sẽ đặt trong thẻ này
                 },
                 templates: {
-                    container: (data) => `<div class="${[data.class._container, data.class.container].filter(v => !!v).join(' ')}"></div>`,
-                    head: (data) => `<div class="${[data.class._head, data.class.head].filter(v => !!v).join(' ')}"></div>`,
-                    tags: (data) => `<div class="${[data.class._tags, data.class.tags].filter(v => !!v).join(' ')}"></div>`,
-                    tag: (data) => `
-                        <div class="${[data.class._tag, data.class.tag].filter(v => !!v).join(' ')}" data-id="${data.item.id}">
-                            <span class="${[data.class._tagLabel, data.class.tagLabel].filter(v => !!v).join(' ')}">${data.item.label}</span>
-                            ${data.hasRemoveTag ? `<span class="${[data.class._tagRemove, data.class.tagRemove].filter(v => !!v).join(' ')}">×</span>` : ''}
+                    container: (cls = this.settings.class) => `<div class="${[cls._container, cls.container].filter(v => !!v).join(' ')}"></div>`,
+                    head: (cls = this.settings.class) => `<div class="${[cls._head, cls.head].filter(v => !!v).join(' ')}"></div>`,
+                    tags: (cls = this.settings.class) => `<div class="${[cls._tags, cls.tags].filter(v => !!v).join(' ')}"></div>`,
+                    tag: (data, cls = this.settings.class) => `
+                        <div class="${[cls._tag, cls.tag].filter(v => !!v).join(' ')}">
+                            <span class="${[cls._tagLabel, cls.tagLabel].filter(v => !!v).join(' ')}">${data.item.label}</span>
+                            ${this.settings.hasRemoveTag && !this.settings.disabled ? `<span class="${[cls._tagRemove, cls.tagRemove].filter(v => !!v).join(' ')}">×</span>` : ''}
                         </div>`,
-                    control: (data) => `<div class="${[data.class._control, data.class.control].filter(v => !!v).join(' ')}"></div>`,
-                    searchInput: (data) => `<input class="${[data.class._searchInput, data.class.searchInput].filter(v => !!v).join(' ')}" type="text" placeholder="${data.placeholder}" />`,
-                    list: (data) => `<div class="${[data.class._list, data.class.list].filter(v => !!v).join(' ')}" style="max-height: ${data.maxHeight};"></div>`,
-                    items: (data) => `<div class="${[data.class._items, data.class.items].filter(v => !!v).join(' ')}"></div>`,
-                    item: (data) => `<div class="${[data.class._item, data.class.item].filter(v => !!v).join(' ')}" data-id="${data.item.id}">${data.item.label}</div>`,
-                    noResults: (data) => `<div class="${[data.class._item, data.class.item].filter(v => !!v).join(' ')}">Không tìm thấy kết quả</div>`,
+                    control: (cls = this.settings.class) => `<div class="${[cls._control, cls.control].filter(v => !!v).join(' ')}"></div>`,
+                    searchInput: (data, cls = this.settings.class) => `<input class="${[cls._searchInput, cls.searchInput].filter(v => !!v).join(' ')}" type="text" placeholder="${this.settings.placeholder}" />`,
+                    list: (data, cls = this.settings.class) => `<div class="${[cls._list, cls.list].filter(v => !!v).join(' ')}" style="max-height: ${data.maxHeight};"></div>`,
+                    items: (cls = this.settings.class) => `<div class="${[cls._items, cls.items].filter(v => !!v).join(' ')}"></div>`,
+                    item: (data, cls = this.settings.class) => `<div class="${[cls._item, cls.item].filter(v => !!v).join(' ')}">${data.item.label}</div>`,
+                    noResults: (cls = this.settings.class) => `<div class="${[cls._item, cls.item].filter(v => !!v).join(' ')}">Không tìm thấy kết quả</div>`,
                 },
             };
 
@@ -82,13 +83,16 @@
                 staticItems: new Map(), // Map <id, item> – data static của root
                 items: new Map(),       // Map <id, item> – tất cả data đã load
                 selected: new Map(),    // Map <id, item> – items đang được chọn
+                _mItems: new Map(),     // Map <id, itemEl> – tất cả data đã load
+                _wmItems: new WeakMap(),// Map <id, itemEl> – tất cả data đã load
+                _mTags: new Map(),      // Map <id, tagEl> – tất cả data đã load
+                _wmTags: new WeakMap(), // Map <id, tagEl> – tất cả data đã load
                 isOpen: false,          // State of dropdown
                 isLoading: false,       // Trạng thái đang load
                 debugger: true,
             }
             this._events = {};          // store event callback
             this._domListeners = [];    // store DOM event listeners for cleanup
-            this._allItems = [];        // all items for search (when source is array or data static)
 
             this._mergeSettings(root, config);
             this._initFeatures();
@@ -102,7 +106,7 @@
 
             if (this.state.isOpen || this.settings.alwaysOpenDropdown) this.openDropdown();
             else {
-                this.state.isOpen = true; // để đảm bảo closeDropdown() chạy đúng logic
+                this.state.isOpen = true;
                 this.closeDropdown();
             }
             this.load();
@@ -167,15 +171,17 @@
             const t = this, s = t.state, sl = s.selected, st = t.settings, attr = {};
 
             for (const a of root.attributes) {
-                if (a.name.startsWith(st.constant.a_startWith)) {
-                    const key = a.name.replace(st.constant.attr_startWith, '').replace(/-([a-z])/g, g => g[1].toUpperCase());
+                if (a.name.startsWith(st.constant.attr_startWith)) {
+                    const key = a.name.replace(st.constant.attr_startWith, '').replace(/-([a-z])/g, g => g[1].toLowerCase());
                     try { attr[key] = JSON.parse(a.value); }
                     catch { attr[key] = a.value; }
                 }
-                if (a.name === 'placeholder') attr.placeholder = a.value;
-                if (a.name === 'tabIndex') attr.tabIndex = a.value || 0;
-                if (a.name === 'required') attr.required = true;
-                if (a.name === 'rtl') attr.rtl = /rtl/i.test(getComputedStyle(root).direction);
+                else if (a.name === 'style') attr.style = a.value;
+                else if (a.name === 'placeholder') attr.placeholder = a.value;
+                else if (a.name === 'tabIndex') attr.tabIndex = a.value || 0;
+                else if (a.name === 'required') attr.required = true;
+                else if (a.name === 'disabled') attr.disabled = true;
+                else if (a.name === 'rtl') attr.rtl = /rtl/i.test(getComputedStyle(root).direction);
             }
             if (config.multiple) st.multiple = config.multiple;
             if (!st.multiple) st.maxItemSelectable = 1;
@@ -333,6 +339,9 @@
             t.list = t.getDom(t._renderTemplate(tmps.list, cls));
             t.items = t.getDom(t._renderTemplate(tmps.items, cls));
 
+            if (s.style) t.container.style = s.style;
+            if (s.tabIndex) t.container.tabIndex = s.tabIndex;
+
             // Xây dựng cây DOM
             /**
             <div class="sl-container">
@@ -387,16 +396,16 @@
                     hoverEl = null;
                 });
             }
-            t._setHoverItem = (index) => {
+            t._setHoverItem = (idx) => {
                 const items = t.items.children;
                 const prev = s.hoverItem;
                 if (prev) prev.classList.remove('hover');
 
-                const item = items[index];
+                const item = items[idx];
                 if (!item) return;
 
                 item.classList.add('hover');
-                s.hoverIndex = index;
+                s.hoverIndex = idx;
                 s.hoverItem = item;
             }
             t._resetHoverItem = () => {
@@ -404,27 +413,36 @@
                 s.hoverItem = null;
                 s.hoverIndex = -1;
             }
+            if (d.disabled) return;
 
             /**
-                mousedown → blur (el cũ) → focus (el mới) → mouseup → click
+                pointerdown → mousedown → blur (el cũ) → focus (el mới) → pointerup → mouseup → click
              */
             // click outside container or list (list not inside container)
-            t._onDOM(document, 'click', (e) => {
+            t._onDOM(document, 'pointerdown', (e) => {
                 if (!t.container.contains(e.target) && !t.list.contains(e.target)) t.closeDropdown();
             });
+
+            if (d.closeable) {
+                t._onDOM(t.head, 'pointerdown', (e) => {
+                    if (e.target.closest(`.${cls._tag}`)) return;
+                    t.toggleDropdown();
+                });
+            }
 
             if (d.multiple) {
                 // hover tag
                 _bindHover(t.tags, `.${cls._tag}`);
                 // click tag
-                t._onDOM(t.tags, 'mousedown', (e) => {
-                    const rm = e.target.closest(`.${cls._tagRemove}`);
+                t._onDOM(t.tags, 'pointerdown', (e) => {
                     const tag = e.target.closest(`.${cls._tag}`);
-                    if (!tag?.dataset.id) return;
+                    if (!tag || !s._wmTags.has(tag)) return;
+
+                    const id = s._wmTags.get(tag);
+                    const rm = e.target.closest(`.${cls._tagRemove}`);
                     // remove tag
-                    if (rm) t.toggleItem(s.selected.get(tag.dataset.id));
+                    if (d.hasRemoveTag && rm) t.toggleItem(s.selected.get(String(id)));
                     else tag.classList.toggle('selected');
-                    e.preventDefault(); // sau khi click tag thì chặn bubble "click outside" - click tag mà không close ddl
                 });
             }
 
@@ -439,11 +457,12 @@
                 if (idx !== t.state.hoverIndex) t._setHoverItem(idx);
             });
             // click item
-            t._onDOM(t.items, 'click', (e) => {
+            t._onDOM(t.items, 'pointerup', (e) => {
+                e.preventDefault(); // chặn hành động mặc định (ex: click checkbox)
                 const itemEl = e.target.closest(`.${cls._item}`);
-                if (!itemEl?.dataset.id) return;
+                if (!itemEl || !s._wmItems.has(itemEl)) return;
 
-                const item = s.items.get(itemEl.dataset.id);
+                const item = s.items.get(s._wmItems.get(itemEl));
                 if (!item) return;
 
                 t.toggleItem(item);
@@ -482,7 +501,7 @@
 
         toggleItem(item, resetUI = true) {
             const t = this;
-            const itemEl = t.items.querySelector(`[data-id="${item.id}"]`);
+            let itemEl = t.state._mItems.get(String(item.id));
             if (!t.settings.multiple) t.items.querySelectorAll('.selected').forEach(el => el.classList.remove('selected'));
             if (t.state.selected.has(String(item.id))) {
                 itemEl?.classList.remove('selected');
@@ -520,11 +539,11 @@
         }
 
         renderTags() {
-            const t = this, d = t.settings, s = t.state.selected;
+            const t = this, d = t.settings, s = t.state;
             // single select
             if (!d.multiple) {
                 t.singleText?.remove();
-                const item = s.values().next().value;
+                const item = s.selected.values().next().value;
                 if (item) {
                     t.singleText = document.createTextNode(item.label);
                     t.head.insertBefore(t.singleText, t.control);
@@ -532,13 +551,14 @@
                 return;
             }
             // multiple select
-            t.tags.replaceChildren();
+            t.tags.replaceChildren(), s._mTags.clear();
             let fragment = document.createDocumentFragment();
-            s.forEach(item => {
-                const tagEl = t.getDom(t._renderTemplate(d.templates.tag, { item }).trim());
-                if (tagEl) {
-                    tagEl.dataset.id = item.id;
-                    fragment.appendChild(tagEl);
+            s.selected.forEach(item => {
+                const el = t.getDom(t._renderTemplate(d.templates.tag, { item }).trim());
+                if (el) {
+                    s._wmTags.set(el, String(item.id));
+                    s._mTags.set(String(item.id), el);
+                    fragment.appendChild(el);
                 }
             });
             t.tags.appendChild(fragment);
@@ -546,24 +566,29 @@
         }
 
         renderItems(append = false) {
-            const t = this, temps = t.settings.templates, i = t.state.items;
+            const t = this, tpl = t.settings.templates, s = t.state;
             if (!t.items) return;
-            if (!append) t.items.replaceChildren();
+            if (!append) t.items.replaceChildren(), s._mItems.clear();
             let fragment = document.createDocumentFragment();
 
-            if (i.size === 0) fragment.appendChild(t.getDom(t._renderTemplate(temps.noResults).trim()));
-            else i.forEach(item => {
-                const html = t._renderTemplate(temps.item, { item });
-                const itemEl = t.getDom(html.trim());
-                if (itemEl) {
-                    itemEl.dataset.id = item.id;
-                    if (t.state.selected.has(String(item.id))) itemEl.classList.add('selected');
-                    fragment.appendChild(itemEl);
+            if (s.items.size === 0) fragment.appendChild(t.getDom(t._renderTemplate(tpl.noResults).trim()));
+            else s.items.forEach(item => {
+                let el = t.getDom(t._renderTemplate(tpl.item, { item }).trim());
+                if (el) {
+                    s._wmItems.set(el, String(item.id));
+                    s._mItems.set(String(item.id), el);
+                    if (s.selected.has(String(item.id))) el.classList.add('selected');
+                    fragment.appendChild(el);
                 }
             });
 
             t.items.appendChild(fragment);
             t.trigger('render_items');
+        }
+
+        toggleDropdown() {
+            if (this.state.isOpen) this.closeDropdown();
+            else this.openDropdown();
         }
 
         openDropdown() {
@@ -584,9 +609,8 @@
         }
 
         // render template context
-        _renderTemplate(template, context = {}) {
-            if (typeof template === 'function') return template.call(this, { ...this.settings, ...context });
-            return template || '';
+        _renderTemplate(tpl, ctx = {}) {
+            return typeof tpl === 'function' ? tpl.call(this, { ...ctx }) : tpl || '';
         }
 
         // return HTMLElement
@@ -595,7 +619,7 @@
             if (arg instanceof Element) return arg;
             if (typeof arg === 'string') {
                 if (arg[0] === '<') {
-                    const t = document.createElement('template');
+                    let t = document.createElement('template');
                     t.innerHTML = arg.trim();
                     return t.content.firstChild;
                 }
@@ -614,10 +638,7 @@
             t.trigger('destroy');
 
             // Ngắt kết nối MutationObserver
-            if (m) {
-                m.disconnect();
-                m = null;
-            }
+            m?.disconnect(), m = null;
 
             // Xóa tất cả DOM event listeners
             t._offAllDOM();
@@ -631,60 +652,54 @@
             // Xóa tất cả event callbacks
             t._events = {};
 
-            // Xóa allItems
-            t._allItems = [];
-
             // Xóa state
             if (s) {
-                if (s.staticItems) s.staticItems.clear();
-                if (s.items) s.items.clear();
-                if (s.selected) s.selected.clear();
+                s.staticItems?.clear();
+                s.items?.clear();
+                s.selected?.clear();
+                s._mTags?.clear();
+                s._mItems?.clear();
                 s = null;
             }
 
             // Xóa references
-            t.container = null;
-            t.head = null;
-            t.tags = null;
-            t.control = null;
-            t.searchInput = null;
-            t.list = null;
-            t.items = null;
-            t.focus_node = null;
-            t.root = null;
+            t.container = t.head = t.tags = t.control = t.searchInput = t.list = t.items = t.focus_node = t.root = null;
         }
 
         on(events, fn) {
-            this._forEvents(events, (e) => {
-                const fns = this._events[e] || [];
+            const t = this;
+            t._forEvents(events, (e) => {
+                let fns = t._events[e] || [];
                 fns.push(fn);
-                this._events[e] = fns;
+                t._events[e] = fns;
             });
         }
 
         off(events, fn) {
+            const t = this;
             var n = arguments.length;
             if (n === 0) {
-                this._events = {};
+                t._events = {};
                 return;
             }
-            this._forEvents(events, (e) => {
+            t._forEvents(events, (e) => {
                 if (n === 1) {
-                    delete this._events[e];
+                    delete t._events[e];
                     return;
                 }
-                const fns = this._events[e];
-                if (fns === undefined) return;
+                let fns = t._events[e];
+                if (!fns) return;
                 fns.splice(fns.indexOf(fn), 1);
-                this._events[e] = fns;
+                t._events[e] = fns;
             });
         }
 
         trigger(events, ...args) {
-            this._forEvents(events, (e) => {
-                const fns = this._events[e];
-                if (fns === undefined) return;
-                fns.forEach(fn => { fn.apply(this, args); });
+            const t = this;
+            t._forEvents(events, (e) => {
+                let fns = t._events[e];
+                if (!fns) return;
+                fns.forEach(fn => { fn.apply(t, args); });
             });
         }
 
@@ -700,10 +715,23 @@
 
         // del all DOM listeners
         _offAllDOM() {
-            this._domListeners.forEach(({ el, e, handler, options }) => {
+            let l = this._domListeners;
+            l.forEach(({ el, e, handler, options }) => {
                 if (el && handler) el.removeEventListener(e, handler, options);
             });
-            this._domListeners = [];
+            l = [];
+        }
+
+        // api
+        getSelected() {
+            return this.state.selected.values();
+        }
+
+        clearSelection() {
+            let ids = [...this.state._mTags.keys()];
+            for (let i = 0; i < ids.length; i++) {
+                this.toggleItem(this.state.selected.get(ids[i]), i == ids.length - 1);
+            }
         }
     }
 

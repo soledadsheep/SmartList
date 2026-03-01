@@ -30,7 +30,7 @@
         };
 
         // Method cache
-        t._getCachedData = function (key) {
+        t._getCachedData = (key) => {
             if (!t.cache.enabled || !t.cache._store.has(key)) return null;
 
             const entry = t.cache._store.get(key);
@@ -47,7 +47,7 @@
             }
         };
 
-        t._setCache = function (key, data) {
+        t._setCache = (key, data) => {
             if (!t.cache.enabled) return;
             t.cache._store.set(key, {
                 data,
@@ -55,7 +55,7 @@
             });
         };
 
-        t._generateCacheKey = function (params) {
+        t._generateCacheKey = (params) => {
             return JSON.stringify({
                 url: typeof sc === 'string' ? sc : 'fn',
                 page: st.currentPage,
@@ -64,7 +64,7 @@
             });
         };
 
-        t.clearCache = function () {
+        t.clearCache = () => {
             t.cache._store.clear();
         };
 
@@ -128,13 +128,13 @@
             });
 
             st.isLoading = false;
-            t.renderItems(append);  // append = true nếu load more
-            if (page === 1 && st.multiple) t.renderTags();
+            t.renderItems(false);  // mode infinity st.items đã được append và renderItems render theo st.items nên không cần truyền append = true tránh render lại
+            if (page === 1 && s.multiple) t.renderTags();
             t.trigger('load_end', { data: itemArray, total: st.total });
         };
 
         // Hàm build params
-        t._buildRequestParams = function () {
+        t._buildRequestParams = () => {
             const filters = [...opts.filters], sorters = [...opts.sorters];
 
             const _detectType = (el) => {

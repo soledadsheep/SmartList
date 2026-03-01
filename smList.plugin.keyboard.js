@@ -48,7 +48,7 @@
                         let removed = false;
                         const selectedEls = Array.from(tags).filter(tag => tag.classList.contains('selected'));
                         for (let i = 0; i < selectedEls.length; i++) {
-                            t.toggleItem(s.selected.get(selectedEls[i].dataset.id), i == selectedEls.length - 1);
+                            t.toggleItem(s.selected.get(s._wmTags.get(selectedEls[i])), i == selectedEls.length - 1);
                             removed = true;
                         }
 
