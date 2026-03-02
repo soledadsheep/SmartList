@@ -13,12 +13,12 @@
                 // ---------- NAVIGATION ----------
                 if (key === 'ArrowDown' || key === 'ArrowUp') {
                     e.preventDefault();
-                    if (!t.state.isOpen) t.openDropdown();
+                    if (!s.isOpen) t.openDropdown();
 
                     const items = t.items.children;
                     if (!items.length) return;
 
-                    let idx = t.state.hoverIndex;
+                    let idx = s.hoverIndex;
                     idx += key === 'ArrowDown' ? 1 : -1;
 
                     if (idx < 0) idx = items.length - 1;
@@ -30,9 +30,9 @@
 
                 // ---------- SELECT ----------
                 if (key === 'Enter') {
-                    if (t.state.hoverItem) {
+                    if (s.hoverItem) {
                         e.preventDefault();
-                        t.toggleItem(s.items.get(t.state.hoverItem.dataset.id));
+                        t.toggleItem(s.items.get(s._wmItems.get(s.hoverItem)));
                     }
                     return;
                 }

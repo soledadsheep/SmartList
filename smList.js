@@ -18,15 +18,16 @@
                 if (nodes.length > 1) return [...nodes].map(el => new SmartList(el, config));
                 element = nodes[0];
             }
-            const root = this.getDom(element);
+            const t = this;
+            const root = t.getDom(element);
             if (!root) throw new Error('SmartList: Cannot find element');
             if (root.SmartList) throw new Error('SmartList already initialized on this element');
 
             // set instance to element
-            root.SmartList = this;
-            this.root = root;
+            root.SmartList = t;
+            t.root = root;
 
-            this.settings = {
+            t.settings = {
                 source: null,
                 scope: document,
                 multiple: root.hasAttribute('multiple'),
@@ -54,6 +55,7 @@
                     _list: 'sl-list',
                     _items: 'sl-items',
                     _item: 'sl-item',
+                    _noResults: 'sl-noResults',
                 },
                 render: {
                     parentTags: '',         // tags sẽ đặt trong thẻ này
@@ -61,67 +63,67 @@
                     parentDropdown: ''      // list sẽ đặt trong thẻ này
                 },
                 templates: {
-                    container: (cls = this.settings.class) => `<div class="${[cls._container, cls.container].filter(v => !!v).join(' ')}"></div>`,
-                    head: (cls = this.settings.class) => `<div class="${[cls._head, cls.head].filter(v => !!v).join(' ')}"></div>`,
-                    tags: (cls = this.settings.class) => `<div class="${[cls._tags, cls.tags].filter(v => !!v).join(' ')}"></div>`,
-                    tag: (data, cls = this.settings.class) => `
+                    container: (cls = t.settings.class) => `<div class="${[cls._container, cls.container].filter(v => !!v).join(' ')}"></div>`,
+                    head: (cls = t.settings.class) => `<div class="${[cls._head, cls.head].filter(v => !!v).join(' ')}"></div>`,
+                    tags: (cls = t.settings.class) => `<div class="${[cls._tags, cls.tags].filter(v => !!v).join(' ')}"></div>`,
+                    tag: (data, cls = t.settings.class) => `
                         <div class="${[cls._tag, cls.tag].filter(v => !!v).join(' ')}">
                             <span class="${[cls._tagLabel, cls.tagLabel].filter(v => !!v).join(' ')}">${data.item.label}</span>
-                            ${this.settings.hasRemoveTag && !this.settings.disabled ? `<span class="${[cls._tagRemove, cls.tagRemove].filter(v => !!v).join(' ')}">×</span>` : ''}
+                            ${t.settings.hasRemoveTag && !t.settings.disabled ? `<span class="${[cls._tagRemove, cls.tagRemove].filter(v => !!v).join(' ')}" role=button>×</span>` : ''}
                         </div>`,
-                    control: (cls = this.settings.class) => `<div class="${[cls._control, cls.control].filter(v => !!v).join(' ')}"></div>`,
-                    searchInput: (data, cls = this.settings.class) => `<input class="${[cls._searchInput, cls.searchInput].filter(v => !!v).join(' ')}" type="text" placeholder="${this.settings.placeholder}" />`,
-                    list: (data, cls = this.settings.class) => `<div class="${[cls._list, cls.list].filter(v => !!v).join(' ')}" style="max-height: ${data.maxHeight};"></div>`,
-                    items: (cls = this.settings.class) => `<div class="${[cls._items, cls.items].filter(v => !!v).join(' ')}"></div>`,
-                    item: (data, cls = this.settings.class) => `<div class="${[cls._item, cls.item].filter(v => !!v).join(' ')}">${data.item.label}</div>`,
-                    noResults: (cls = this.settings.class) => `<div class="${[cls._item, cls.item].filter(v => !!v).join(' ')}">Không tìm thấy kết quả</div>`,
+                    control: (cls = t.settings.class) => `<div class="${[cls._control, cls.control].filter(v => !!v).join(' ')}"></div>`,
+                    searchInput: (cls = t.settings.class) => `<input class="${[cls._searchInput, cls.searchInput].filter(v => !!v).join(' ')}" type="text" placeholder="${t.settings.placeholder}" />`,
+                    list: (data, cls = t.settings.class) => `<div class="${[cls._list, cls.list].filter(v => !!v).join(' ')}" style="max-height: ${data.maxHeight};"></div>`,
+                    items: (cls = t.settings.class) => `<div class="${[cls._items, cls.items].filter(v => !!v).join(' ')}"></div>`,
+                    item: (data, cls = t.settings.class) => `<div class="${[cls._item, cls.item].filter(v => !!v).join(' ')}">${data.item.label}</div>`,
+                    noResults: ({ }, cls = t.settings.class) => `<div class="${[cls._noResults, cls.noResults].filter(v => !!v).join(' ')}">Không tìm thấy kết quả</div>`,
                 },
             };
 
             // Setup state
-            this.state = {
+            t.state = {
                 staticItems: new Map(), // Map <id, item> – data static của root
                 items: new Map(),       // Map <id, item> – tất cả data đã load
                 selected: new Map(),    // Map <id, item> – items đang được chọn
                 _mItems: new Map(),     // Map <id, itemEl> – tất cả data đã load
-                _wmItems: new WeakMap(),// Map <id, itemEl> – tất cả data đã load
-                _mTags: new Map(),      // Map <id, tagEl> – tất cả data đã load
-                _wmTags: new WeakMap(), // Map <id, tagEl> – tất cả data đã load
+                _wmItems: new WeakMap(),// Map <itemEl, id> – tất cả data đã load
+                _mTags: new Map(),      // Map <id, tagEl> – tất cả data đã selected
+                _wmTags: new WeakMap(), // Map <tagEl, id> – tất cả data đã selected
                 isOpen: false,          // State of dropdown
                 isLoading: false,       // Trạng thái đang load
                 debugger: true,
             }
-            this._events = {};          // store event callback
-            this._domListeners = [];    // store DOM event listeners for cleanup
+            t._events = {};          // store event callback
+            t._domListeners = [];    // store DOM event listeners for cleanup
 
-            this._mergeSettings(root, config);
-            this._initFeatures();
-            this._initCallbacks();
-            this._initTheme();
-            this._initTemplate();
+            t._mergeSettings(root, config);
+            t._initFeatures();
+            t._initCallbacks();
+            t._initTheme();
+            t._initTemplate();
 
             // Bind events
-            this.focus_node = this.searchInput;
-            this._bindEvents(); //  trigger event init on this for sure DOM is ready
+            t.focus_node = t.searchInput;
+            t._bindEvents(); //  trigger event init on this for sure DOM is ready
 
-            if (this.state.isOpen || this.settings.alwaysOpenDropdown) this.openDropdown();
+            if (t.state.isOpen || t.settings.alwaysOpenDropdown) t.openDropdown();
             else {
-                this.state.isOpen = true;
-                this.closeDropdown();
+                t.state.isOpen = true;
+                t.closeDropdown();
             }
-            this.load();
-            this.syncRoot();
+            t.load();
+            t.syncRoot();
 
             // Auto destroy khi không cần (document không chứa this.root - ex: redirect page)
-            this._observer = new MutationObserver((observers) => {
+            t._observer = new MutationObserver((observers) => {
                 for (const o of observers) {
-                    if (!document.contains(this.root)) {
-                        this.destroy();
+                    if (!document.contains(t.root)) {
+                        t.destroy();
                         break;
                     }
                 }
             });
-            this._observer.observe(document.body, { childList: true, subtree: true });
+            t._observer.observe(document.body, { childList: true, subtree: true });
         }
 
         async load() {
@@ -181,7 +183,7 @@
                 else if (a.name === 'tabIndex') attr.tabIndex = a.value || 0;
                 else if (a.name === 'required') attr.required = true;
                 else if (a.name === 'disabled') attr.disabled = true;
-                else if (a.name === 'rtl') attr.rtl = /rtl/i.test(getComputedStyle(root).direction);
+                else if (a.name === 'direction') attr.direction = /rtl/i.test(getComputedStyle(root).direction);
             }
             if (config.multiple) st.multiple = config.multiple;
             if (!st.multiple) st.maxItemSelectable = 1;
@@ -425,8 +427,8 @@
 
             if (d.closeable) {
                 t._onDOM(t.head, 'pointerdown', (e) => {
-                    if (e.target.closest(`.${cls._tag}`)) return;
-                    t.toggleDropdown();
+                    if (e.target.closest(`.${cls._tagRemove}`)) return;
+                    s.isOpen ? t.closeDropdown() : t.openDropdown();
                 });
             }
 
@@ -470,7 +472,7 @@
             });
 
             t._onDOM(t.searchInput, 'input', (e) => t.onInput(e));
-            t._onDOM(t.focus_node, 'click', (e) => t.onClick(e));
+            t._onDOM(t.focus_node, 'pointerdown', (e) => t.onClick(e));
             t._onDOM(t.focus_node, 'focus', (e) => t.onFocus(e));
             t._onDOM(t.focus_node, 'blur', (e) => t.onBlur(e));
 
@@ -478,7 +480,7 @@
                 t.load();
                 t.openDropdown();
             }
-            t.onClick = (e) => t.openDropdown();
+            t.onClick = (e) => { t.openDropdown(), e.stopPropagation() };
             t.onFocus = (e) => t.openDropdown();
             t.onBlur = (e) => { }
 
@@ -586,11 +588,6 @@
             t.trigger('render_items');
         }
 
-        toggleDropdown() {
-            if (this.state.isOpen) this.closeDropdown();
-            else this.openDropdown();
-        }
-
         openDropdown() {
             const t = this;
             if (t.state.isOpen) return;
@@ -616,7 +613,7 @@
         // return HTMLElement
         getDom(arg) {
             if (!arg) return null;
-            if (arg instanceof Element) return arg;
+            if (arg instanceof Element || arg === document) return arg;
             if (typeof arg === 'string') {
                 if (arg[0] === '<') {
                     let t = document.createElement('template');
