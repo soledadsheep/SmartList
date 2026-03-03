@@ -63,20 +63,20 @@
                     parentDropdown: ''      // list sẽ đặt trong thẻ này
                 },
                 templates: {
-                    container: (cls = t.settings.class) => `<div class="${[cls._container, cls.container].filter(v => !!v).join(' ')}"></div>`,
-                    head: (cls = t.settings.class) => `<div class="${[cls._head, cls.head].filter(v => !!v).join(' ')}"></div>`,
-                    tags: (cls = t.settings.class) => `<div class="${[cls._tags, cls.tags].filter(v => !!v).join(' ')}"></div>`,
-                    tag: (data, cls = t.settings.class) => `
-                        <div class="${[cls._tag, cls.tag].filter(v => !!v).join(' ')}">
-                            <span class="${[cls._tagLabel, cls.tagLabel].filter(v => !!v).join(' ')}">${data.item.label}</span>
-                            ${t.settings.hasRemoveTag && !t.settings.disabled ? `<span class="${[cls._tagRemove, cls.tagRemove].filter(v => !!v).join(' ')}" role=button>×</span>` : ''}
+                    container: (c) => `<div class="${[c._container, c.container].filter(v => !!v).join(' ')}"></div>`,
+                    head: (c) => `<div class="${[c._head, c.head].filter(v => !!v).join(' ')}"></div>`,
+                    tags: (c) => `<div class="${[c._tags, c.tags].filter(v => !!v).join(' ')}"></div>`,
+                    tag: (data, s = t.settings, c = s.class) => `
+                        <div class="${[c._tag, c.tag].filter(v => !!v).join(' ')}">
+                            <span class="${[c._tagLabel, c.tagLabel].filter(v => !!v).join(' ')}">${data.item.label}</span>
+                            ${s.hasRemoveTag && !s.disabled ? `<span class="${[c._tagRemove, c.tagRemove].filter(v => !!v).join(' ')}" role="button">×</span>` : ''}
                         </div>`,
-                    control: (cls = t.settings.class) => `<div class="${[cls._control, cls.control].filter(v => !!v).join(' ')}"></div>`,
-                    searchInput: (cls = t.settings.class) => `<input class="${[cls._searchInput, cls.searchInput].filter(v => !!v).join(' ')}" type="text" placeholder="${t.settings.placeholder}" />`,
-                    list: (data, cls = t.settings.class) => `<div class="${[cls._list, cls.list].filter(v => !!v).join(' ')}" style="max-height: ${data.maxHeight};"></div>`,
-                    items: (cls = t.settings.class) => `<div class="${[cls._items, cls.items].filter(v => !!v).join(' ')}"></div>`,
-                    item: (data, cls = t.settings.class) => `<div class="${[cls._item, cls.item].filter(v => !!v).join(' ')}">${data.item.label}</div>`,
-                    noResults: ({ }, cls = t.settings.class) => `<div class="${[cls._noResults, cls.noResults].filter(v => !!v).join(' ')}">Không tìm thấy kết quả</div>`,
+                    control: (c) => `<div class="${[c._control, c.control].filter(v => !!v).join(' ')}"></div>`,
+                    searchInput: (c) => `<input class="${[c._searchInput, c.searchInput].filter(v => !!v).join(' ')}" type="text" placeholder="${t.settings.placeholder}" />`,
+                    list: (c) => `<div class="${[c._list, c.list].filter(v => !!v).join(' ')}" style="max-height: ${t.settings.maxHeight};"></div>`,
+                    items: (c) => `<div class="${[c._items, c.items].filter(v => !!v).join(' ')}"></div>`,
+                    item: (data, c = t.settings.class) => `<div class="${[c._item, c.item].filter(v => !!v).join(' ')}">${data.item.label}</div>`,
+                    noResults: ({ }, c = t.settings.class) => `<div class="${[c._noResults, c.noResults].filter(v => !!v).join(' ')}">Không tìm thấy kết quả</div>`,
                 },
             };
 
@@ -168,7 +168,7 @@
             this.state.items = new Map(r.map(i => [String(i.id), i]));
         }
 
-        // merge config config -> data-attr -> default
+        // merge config -> data-attr -> default
         _mergeSettings(root, config) {
             const t = this, s = t.state, sl = s.selected, st = t.settings, attr = {};
 
@@ -324,22 +324,25 @@
         }
 
         _initTheme() {
-            let s = this.settings;
-            let t = SmartList.themes[s.theme || 'default'];
-            if (t && typeof t === 'object') s.class = Object.assign(s.class, t.classMap);
+            const s = this.settings;
+            const themeFactory = SmartList.themes[s.theme || 'bootstrap'];
+            if (!themeFactory) return;
+
+            const themeConfig = typeof themeFactory === 'function' ? themeFactory(this, s.themeOptions || {}) : themeFactory;
+            if (themeConfig?.classMap) s.class = Object.assign({}, s.class, themeConfig.classMap);
         }
 
         _initTemplate() {
-            let t = this, s = t.settings, cls = s.class, tmps = s.templates;
+            let t = this, s = t.settings, c = s.class, tmps = s.templates;
 
             // Render từng phần riêng biệt
-            t.container = t.getDom(t._renderTemplate(tmps.container, cls));
-            t.head = t.getDom(t._renderTemplate(tmps.head, cls));
-            t.tags = t.getDom(t._renderTemplate(tmps.tags, cls));
-            t.control = t.getDom(t._renderTemplate(tmps.control, cls));
-            t.searchInput = t.getDom(t._renderTemplate(tmps.searchInput, cls));
-            t.list = t.getDom(t._renderTemplate(tmps.list, cls));
-            t.items = t.getDom(t._renderTemplate(tmps.items, cls));
+            t.container = t.getDom(t._renderTemplate(tmps.container, c));
+            t.head = t.getDom(t._renderTemplate(tmps.head, c));
+            t.tags = t.getDom(t._renderTemplate(tmps.tags, c));
+            t.control = t.getDom(t._renderTemplate(tmps.control, c));
+            t.searchInput = t.getDom(t._renderTemplate(tmps.searchInput, c));
+            t.list = t.getDom(t._renderTemplate(tmps.list, c));
+            t.items = t.getDom(t._renderTemplate(tmps.items, c));
 
             if (s.style) t.container.style = s.style;
             if (s.tabIndex) t.container.tabIndex = s.tabIndex;
@@ -589,17 +592,17 @@
         }
 
         openDropdown() {
-            const t = this;
-            if (t.state.isOpen) return;
-            t.state.isOpen = true;
+            let t = this, s = t.state;
+            if (s.isOpen) return;
+            s.isOpen = true;
             t.list.style.display = 'block';
             t.trigger('dropdown_open');
         }
 
         closeDropdown() {
-            const t = this;
-            if (!t.state.isOpen || t.settings.alwaysOpenDropdown) return;
-            t.state.isOpen = false;
+            let t = this, s = t.state;
+            if (!s.isOpen || t.settings.alwaysOpenDropdown) return;
+            s.isOpen = false;
             t.list.style.display = 'none';
             t._resetHoverItem();
             t.trigger('dropdown_close');
@@ -625,7 +628,7 @@
         }
 
         destroy() {
-            const t = this;  let s = t.state, m = t._observer;
+            let t = this, s = t.state, m = t._observer;
 
             // Ngăn destroy nhiều lần
             if (t._destroyed) return;
@@ -641,7 +644,8 @@
             t._offAllDOM();
 
             // Xóa DOM elements được tạo
-            if (t.container && t.container.parentNode) t.container.parentNode.removeChild(t.container);
+            let e = t.container;
+            if (e && e.parentNode) e.parentNode.removeChild(e);
 
             // Xóa reference SmartList từ root element
             delete t.root.SmartList;
@@ -739,7 +743,6 @@
 
     SmartList.plugins = {};
     SmartList.plugin = (name, fn) => {
-        if (typeof name !== 'string' || name === '') throw new Error('SmartList: Plugin name must be a non-empty string');
         if (typeof fn !== 'function') throw new Error('SmartList: Plugin fn is not a function');
         SmartList.plugins[name] = fn;
     };
